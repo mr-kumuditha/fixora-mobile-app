@@ -1,0 +1,8 @@
+<resources>
+    <!-- Pre-Compose window background / system bars only. The real palette
+         lives in Compose (core/designsystem/Theme.kt). -->
+    <style name="Theme.Fixora" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/fixora_primary_light</item>
+        <item name="android:windowBackground">@color/fixora_background_light</item>
+    </style>
+</resources>

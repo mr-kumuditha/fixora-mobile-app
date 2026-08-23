@@ -1,0 +1,14 @@
+<resources>
+    <!-- Launcher icon field, sampled from Assets/app Logo.PNG -->
+    <color name="fixora_icon_background">#2B2E3B</color>
+
+    <!-- Window/status bar only. Compose owns the real palette,
+         see core/designsystem/Color.kt -->
+    <color name="fixora_primary_light">#4F46E5</color>
+    <color name="fixora_background_light">#F7F8FA</color>
+    <!-- Default declarations are required even though these are consumed only
+         by the night-qualified window theme. Values remain the design-system
+         dark tokens and are overridden by the identical night resources. -->
+    <color name="fixora_primary_dark">#8B93FF</color>
+    <color name="fixora_background_dark">#0F1115</color>
+</resources>

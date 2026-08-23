@@ -1,0 +1,57 @@
+# Gradle and Kotlin generated state
+.gradle/
+.kotlin/
+**/build/
+build/
+
+# Android Studio and IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# Local Android and machine configuration
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+.DS_Store
+
+# Logs and transient tool output
+*.log
+firebase-debug.log
+firestore-debug.log
+supabase/.temp/
+.claude/
+
+# JavaScript dependencies
+node_modules/
+
+# Environment and local secret files
+.env
+.env.*
+!.env.example
+!.env.*.example
+secrets.properties
+keystore.properties
+signing.properties
+staff-accounts.local.md
+
+# Signing keys, certificates, and backend credentials
+*.keystore
+*.jks
+*.pem
+*.p12
+service-account*.json
+firebase-service-account*.json
+**/service-account*.json
+**/firebase-service-account*.json
+
+# Generated Android packages. Keep only the reviewed release artifact below.
+*.apk
+*.aab
+!releases/
+!releases/Fixora-v1.0-debug.apk
+
+# app/google-services.json is intentionally not ignored. It is the Firebase
+# Android client configuration, not an Admin SDK service-account credential.
+# Re-review it before commit whenever it is replaced.

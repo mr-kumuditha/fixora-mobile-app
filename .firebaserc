@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "techfix-mobile-app",
+    "no": "codecraft-music"
+  },
+  "targets": {},
+  "etags": {}
+}

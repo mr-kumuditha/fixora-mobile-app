@@ -1,0 +1,263 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function currentUserExists() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function hasRole(role) { return currentUserExists() && currentUser().role == role; }
+    function isAdmin() { return hasRole('ADMIN'); }
+    function isBranchManager() { return hasRole('BRANCH_MANAGER'); }
+    function isTechnician() { return hasRole('TECHNICIAN'); }
+    function validBranchId(value) { return value is string && value in ['colombo', 'galle']; }
+    function hasStaffBranch() {
+      return currentUserExists() && validBranchId(currentUser().branchId);
+    }
+    function hasTechnicianLink() {
+      return isTechnician() && currentUser().technicianId is string &&
+        currentUser().technicianId.size() > 0 && hasStaffBranch() &&
+        exists(/databases/$(database)/documents/technicians/$(currentUser().technicianId)) &&
+        get(/databases/$(database)/documents/technicians/$(currentUser().technicianId)).data.active == true &&
+        get(/databases/$(database)/documents/technicians/$(currentUser().technicianId)).data.linkedUserId == request.auth.uid &&
+        get(/databases/$(database)/documents/technicians/$(currentUser().technicianId)).data.branchId == currentUser().branchId;
+    }
+
+    function validRole(value) {
+      return value in ['CUSTOMER', 'TECHNICIAN', 'BRANCH_MANAGER', 'ADMIN'];
+    }
+    function validTechnician(technicianId, data) {
+      return data.keys().hasOnly([
+          'id', 'name', 'branchId', 'categorySkills', 'available',
+          'active', 'linkedUserId', 'archivedAt', 'createdAt', 'updatedAt'
+        ]) &&
+        data.id is string && data.id == technicianId &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+        validBranchId(data.branchId) &&
+        data.categorySkills is list && data.categorySkills.size() > 0 &&
+        data.categorySkills.hasOnly(['MOBILE', 'LAPTOP', 'DESKTOP', 'TABLET']) &&
+        data.available is bool && data.active is bool &&
+        (data.linkedUserId == null ||
+          (data.linkedUserId is string && data.linkedUserId.size() > 0)) &&
+        (data.archivedAt == null || data.archivedAt is timestamp) &&
+        data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+    function validTechnicianAccountLink(technicianId, data) {
+      return !data.active || data.linkedUserId == null ||
+        (existsAfter(/databases/$(database)/documents/users/$(data.linkedUserId)) &&
+          getAfter(/databases/$(database)/documents/users/$(data.linkedUserId)).data.role == 'TECHNICIAN' &&
+          getAfter(/databases/$(database)/documents/users/$(data.linkedUserId)).data.technicianId == technicianId &&
+          getAfter(/databases/$(database)/documents/users/$(data.linkedUserId)).data.branchId == data.branchId);
+    }
+    function validOwnProfileUpdate() {
+      return request.resource.data.role == resource.data.role &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'phone', 'photoUrl', 'updatedAt'
+        ]) &&
+        (!('name' in request.resource.data) ||
+          (request.resource.data.name is string && request.resource.data.name.size() >= 2 &&
+            request.resource.data.name.size() <= 80)) &&
+        (!('phone' in request.resource.data) ||
+          (request.resource.data.phone is string && request.resource.data.phone.size() > 0 &&
+            request.resource.data.phone.size() <= 24)) &&
+        (!('photoUrl' in request.resource.data) ||
+          (request.resource.data.photoUrl is string && request.resource.data.photoUrl.size() > 0 &&
+            request.resource.data.photoUrl.size() <= 2048 &&
+            request.resource.data.photoUrl.matches('https://.*'))) &&
+        request.resource.data.updatedAt == request.time;
+    }
+    function validAdminManagedUserUpdate(uid) {
+      return uid != request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'role', 'branchId', 'technicianId', 'updatedAt'
+        ]) && validRole(request.resource.data.role) &&
+        request.resource.data.updatedAt == request.time &&
+        (request.resource.data.role == 'ADMIN' || validBranchId(request.resource.data.branchId)) &&
+        (request.resource.data.role != 'TECHNICIAN' || validTechnicianUserLink(uid, request.resource.data));
+    }
+    function validAdminManagedTechnicianCreate(uid) {
+      return request.resource.data.keys().hasOnly([
+          'uid', 'email', 'role', 'branchId', 'technicianId', 'createdAt', 'updatedAt'
+        ]) && request.resource.data.uid == uid && request.resource.data.email is string &&
+        request.resource.data.email.size() > 0 && request.resource.data.role == 'TECHNICIAN' &&
+        validTechnicianUserLink(uid, request.resource.data) &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+    }
+    function validTechnicianUserLink(uid, data) {
+      return validBranchId(data.branchId) && data.technicianId is string &&
+        data.technicianId.size() > 0 &&
+        existsAfter(/databases/$(database)/documents/technicians/$(data.technicianId)) &&
+        getAfter(/databases/$(database)/documents/technicians/$(data.technicianId)).data.active == true &&
+        getAfter(/databases/$(database)/documents/technicians/$(data.technicianId)).data.linkedUserId == uid &&
+        getAfter(/databases/$(database)/documents/technicians/$(data.technicianId)).data.branchId == data.branchId;
+    }
+
+    function ownsRepair(data) {
+      return signedIn() && data.customerId == request.auth.uid;
+    }
+    function canReadRepair(data) {
+      return ownsRepair(data) || isAdmin() ||
+        (isBranchManager() && hasStaffBranch() && data.branchId == currentUser().branchId) ||
+        (hasTechnicianLink() && data.technicianId == currentUser().technicianId);
+    }
+    function validNewRepair() {
+      return request.resource.data.keys().hasOnly([
+          'customerId', 'serviceId', 'deviceDetails', 'issueDescription', 'imageUrls',
+          'branchId', 'technicianId', 'status', 'createdAt', 'scheduledAt', 'completedAt'
+        ]) && request.resource.data.customerId == request.auth.uid &&
+        request.resource.data.serviceId is string &&
+        request.resource.data.issueDescription is string &&
+        request.resource.data.imageUrls is list && validBranchId(request.resource.data.branchId) &&
+        request.resource.data.technicianId == null &&
+        request.resource.data.status == 'SUBMITTED' &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.completedAt == null;
+    }
+    function immutableRepairFieldsUnchanged() {
+      return request.resource.data.customerId == resource.data.customerId &&
+        request.resource.data.serviceId == resource.data.serviceId &&
+        request.resource.data.deviceDetails == resource.data.deviceDetails &&
+        request.resource.data.issueDescription == resource.data.issueDescription &&
+        request.resource.data.imageUrls == resource.data.imageUrls &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.scheduledAt == resource.data.scheduledAt;
+    }
+    function validOperationalTransition(from, to) {
+      return (from == 'CONFIRMED' && to == 'RECEIVED') ||
+        (from == 'RECEIVED' && to == 'DIAGNOSIS') ||
+        (from == 'DIAGNOSIS' && to == 'APPROVED') ||
+        (from == 'APPROVED' && to == 'IN_PROGRESS') ||
+        (from == 'IN_PROGRESS' && to == 'QUALITY_CHECK') ||
+        (from == 'QUALITY_CHECK' && to == 'READY_FOR_PICKUP') ||
+        (from == 'AWAITING_PARTS' && to == 'IN_PROGRESS');
+    }
+    function isOperationalStatusUpdate() {
+      return immutableRepairFieldsUnchanged() &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.technicianId == resource.data.technicianId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        validOperationalTransition(resource.data.status, request.resource.data.status);
+    }
+    function isManagerAssignment() {
+      return immutableRepairFieldsUnchanged() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'branchId', 'technicianId', 'status'
+        ]) && validBranchId(request.resource.data.branchId) &&
+        request.resource.data.technicianId is string &&
+        request.resource.data.technicianId.size() > 0 &&
+        assignableTechnician(
+          request.resource.data.technicianId,
+          request.resource.data.branchId,
+          request.resource.data.deviceDetails.category
+        ) &&
+        (request.resource.data.status == resource.data.status ||
+          (resource.data.status == 'SUBMITTED' && request.resource.data.status == 'CONFIRMED'));
+    }
+    function assignableTechnician(technicianId, branchId, category) {
+      return exists(/databases/$(database)/documents/technicians/$(technicianId)) &&
+        get(/databases/$(database)/documents/technicians/$(technicianId)).data.active == true &&
+        get(/databases/$(database)/documents/technicians/$(technicianId)).data.available == true &&
+        get(/databases/$(database)/documents/technicians/$(technicianId)).data.branchId == branchId &&
+        get(/databases/$(database)/documents/technicians/$(technicianId)).data.categorySkills.hasAny([category]) &&
+        get(/databases/$(database)/documents/technicians/$(technicianId)).data.linkedUserId is string &&
+        exists(/databases/$(database)/documents/users/$(
+          get(/databases/$(database)/documents/technicians/$(technicianId)).data.linkedUserId
+        )) &&
+        get(/databases/$(database)/documents/users/$(
+          get(/databases/$(database)/documents/technicians/$(technicianId)).data.linkedUserId
+        )).data.role == 'TECHNICIAN' &&
+        get(/databases/$(database)/documents/users/$(
+          get(/databases/$(database)/documents/technicians/$(technicianId)).data.linkedUserId
+        )).data.technicianId == technicianId &&
+        get(/databases/$(database)/documents/users/$(
+          get(/databases/$(database)/documents/technicians/$(technicianId)).data.linkedUserId
+        )).data.branchId == branchId;
+    }
+    function isCustomerCompletion() {
+      return ownsRepair(resource.data) && immutableRepairFieldsUnchanged() &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.technicianId == resource.data.technicianId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'completedAt']) &&
+        resource.data.status == 'READY_FOR_PICKUP' &&
+        request.resource.data.status == 'COMPLETED' &&
+        request.resource.data.completedAt == request.time;
+    }
+    function ownsRepairRequest(requestId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/repairRequests/$(requestId)).data.customerId == request.auth.uid;
+    }
+    function validPayment() {
+      return request.resource.data.keys().hasOnly([
+          'repairRequestId', 'amount', 'method', 'status', 'receiptId', 'createdAt'
+        ]) && request.resource.data.repairRequestId is string &&
+        request.resource.data.amount is number && request.resource.data.amount > 0 &&
+        request.resource.data.method in ['CARD', 'CASH_ON_PICKUP'] &&
+        request.resource.data.status in ['SUCCESS', 'FAILED'] &&
+        request.resource.data.receiptId is string && request.resource.data.receiptId.size() > 0 &&
+        request.resource.data.createdAt == request.time;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() &&
+        (request.auth.uid == uid || isAdmin() ||
+          (isBranchManager() && hasStaffBranch() &&
+            resource.data.role == 'TECHNICIAN' &&
+            resource.data.branchId == currentUser().branchId));
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.role == 'CUSTOMER' ||
+        (isAdmin() && request.auth.uid != uid && validAdminManagedTechnicianCreate(uid));
+      allow update: if signedIn() &&
+        ((request.auth.uid == uid && validOwnProfileUpdate()) ||
+          (isAdmin() && validAdminManagedUserUpdate(uid)));
+      allow delete: if false;
+    }
+    match /services/{serviceId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    match /branches/{branchId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    match /technicians/{technicianId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() && validTechnician(technicianId, request.resource.data) &&
+        validTechnicianAccountLink(technicianId, request.resource.data);
+      allow update: if isAdmin() && validTechnician(technicianId, request.resource.data) &&
+        validTechnicianAccountLink(technicianId, request.resource.data) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+    }
+    match /repairRequests/{requestId} {
+      allow read: if signedIn() && canReadRepair(resource.data);
+      allow create: if signedIn() && validNewRepair();
+      allow update: if signedIn() &&
+        (isCustomerCompletion() ||
+          (isAdmin() && (isManagerAssignment() || isOperationalStatusUpdate())) ||
+          (isBranchManager() && hasStaffBranch() &&
+            resource.data.branchId == currentUser().branchId &&
+            request.resource.data.branchId == currentUser().branchId &&
+            (isManagerAssignment() || isOperationalStatusUpdate())) ||
+          (hasTechnicianLink() &&
+            resource.data.technicianId == currentUser().technicianId &&
+            isOperationalStatusUpdate()));
+      allow delete: if isAdmin();
+    }
+    match /payments/{paymentId} {
+      allow read: if signedIn() &&
+        (isAdmin() || ownsRepairRequest(resource.data.repairRequestId));
+      allow create: if signedIn() &&
+        ownsRepairRequest(request.resource.data.repairRequestId) && validPayment();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Fixora</string>
+    <string name="app_tagline">Smart Device Repair Platform</string>
+    <string name="cd_app_logo">Fixora logo</string>
+</resources>

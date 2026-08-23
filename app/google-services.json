@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "944303819849",
+    "project_id": "techfix-mobile-app",
+    "storage_bucket": "techfix-mobile-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:944303819849:android:c93189df9da17530c48398",
+        "android_client_info": {
+          "package_name": "com.techfix.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "944303819849-1uom7fq9erb9irnqionfioshledpv32g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.techfix.app",
+            "certificate_hash": "9b32a14fbad6acb01642ea68b2aabae6cc0ebd6c"
+          }
+        },
+        {
+          "client_id": "944303819849-5b10qe6tocc1rsl9cu1aoi30seln2gmi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxFqEvPwTUR3yDICnbe68nKryqmMVMuZs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "944303819849-5b10qe6tocc1rsl9cu1aoi30seln2gmi.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
