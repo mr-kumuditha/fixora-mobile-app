@@ -58,6 +58,25 @@ import com.techfix.app.ui.customer.repair.RepairHistoryScreen
 import com.techfix.app.ui.customer.repair.RepairHistoryViewModel
 import com.techfix.app.ui.customer.repair.RepairTrackingScreen
 import com.techfix.app.ui.customer.repair.RepairTrackingViewModel
+import com.techfix.app.ui.staff.StaffAppointmentDetailScreen
+import com.techfix.app.ui.staff.StaffAppointmentDetailViewModel
+import com.techfix.app.ui.staff.StaffAppointmentsScreen
+import com.techfix.app.ui.staff.StaffAppointmentsViewModel
+import com.techfix.app.ui.staff.StaffContext
+import com.techfix.app.ui.staff.StaffDashboardScreen
+import com.techfix.app.ui.staff.StaffDashboardViewModel
+import com.techfix.app.ui.staff.StaffInventoryScreen
+import com.techfix.app.ui.staff.StaffInventoryViewModel
+import com.techfix.app.ui.staff.StaffQueueTab
+import com.techfix.app.ui.staff.StaffBottomBar
+import com.techfix.app.ui.staff.StaffInventoryTab
+import com.techfix.app.ui.staff.StaffOperationsViewModel
+import com.techfix.app.ui.staff.StaffBranchesScreen
+import com.techfix.app.ui.staff.StaffUsersScreen
+import com.techfix.app.ui.staff.StaffReportsScreen
+import com.techfix.app.ui.staff.StaffMoreScreen
+import com.techfix.app.ui.staff.inventory.AdminInventoryScreen
+import com.techfix.app.ui.staff.inventory.AdminInventoryViewModel
 
 @Composable
 fun FixoraNavHost(
@@ -69,16 +88,25 @@ fun FixoraNavHost(
     val role by sessionViewModel.role.collectAsState()
     val user by sessionViewModel.user.collectAsState()
 
-    val startDestination = if (role == null) Graph.AUTH else Graph.CUSTOMER
+    val startDestination = when {
+        role == null -> Graph.AUTH
+        role == UserRole.CUSTOMER -> Graph.CUSTOMER
+        else -> Graph.STAFF
+    }
 
     // The bottom bar belongs to the customer's five top-level destinations and
-    // nothing else: auth and every customer drill-down
+    // nothing else: auth, the staff screen set, and every customer drill-down
     // (booking, tracking, payment, a service or history detail) render without
     // it. Keeping it here rather than inside each screen means one bar
     // instance that survives the tab switch instead of five that animate in.
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = currentRoute in CustomerTab.routes
+    val showStaffBottomBar = currentRoute == StaffRoutes.DASHBOARD ||
+        currentRoute == StaffRoutes.INVENTORY ||
+        currentRoute == StaffRoutes.TECHNICIANS ||
+        currentRoute == StaffRoutes.MORE ||
+        currentRoute?.startsWith("staff/queue") == true
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -91,6 +119,18 @@ fun FixoraNavHost(
                 CustomerBottomBar(
                     currentRoute = currentRoute,
                     onTabSelected = { tab -> navController.navigateToTab(tab) },
+                )
+            } else if (showStaffBottomBar && role != null) {
+                StaffBottomBar(
+                    role = role!!,
+                    currentRoute = currentRoute,
+                    onTabSelected = { target ->
+                        navController.navigate(target) {
+                            popUpTo(StaffRoutes.DASHBOARD) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                 )
             }
         },
@@ -106,6 +146,7 @@ fun FixoraNavHost(
         ) {
             authGraph(navController, sessionViewModel)
             customerGraph(navController, sessionViewModel, user, darkTheme, onThemeChange)
+            staffGraph(navController, sessionViewModel, user)
         }
     }
 }
@@ -134,7 +175,8 @@ private fun onSignedIn(
     user: AuthUser,
 ) {
     sessionViewModel.signIn(user)
-    navController.navigate(Graph.CUSTOMER) {
+    val graph = if (user.role == UserRole.CUSTOMER) Graph.CUSTOMER else Graph.STAFF
+    navController.navigate(graph) {
         popUpTo(Graph.AUTH) { inclusive = true }
     }
 }
@@ -307,6 +349,7 @@ private fun NavGraphBuilder.customerGraph(
             val matchBranches = remember {
                 MatchBranchesUseCase(
                     branchRepository = RepositoryProvider.branches,
+                    technicianRepository = RepositoryProvider.technicians,
                     sparePartRepository = RepositoryProvider.spareParts,
                 )
             }
@@ -564,3 +607,274 @@ private fun NavGraphBuilder.customerGraph(
 }
 
 private const val PROFILE_FEEDBACK_KEY = "profile_feedback"
+
+/**
+ * The one staff screen set, shared by Admin, Branch Manager, and Technician.
+ * There is no per-role graph — every difference is a flag on [StaffContext],
+ * which is built from the `users/{uid}` record the session already holds.
+ */
+private fun NavGraphBuilder.staffGraph(
+    navController: NavHostController,
+    sessionViewModel: SessionViewModel,
+    user: AuthUser?,
+) {
+    navigation(startDestination = StaffRoutes.DASHBOARD, route = Graph.STAFF) {
+        composable(StaffRoutes.DASHBOARD) {
+            val staffContext = StaffContext.from(user)
+            val dashboardViewModel: StaffDashboardViewModel = viewModel(
+                factory = StaffDashboardViewModel.factory(
+                    staffContext = staffContext,
+                    repairRequestRepository = RepositoryProvider.repairRequests,
+                    paymentRepository = RepositoryProvider.payments,
+                    branchRepository = RepositoryProvider.branches,
+                    technicianRepository = RepositoryProvider.technicians,
+                    sparePartRepository = RepositoryProvider.spareParts,
+                    userRepository = RepositoryProvider.users,
+                ),
+            )
+            // Re-read on every return so a repair confirmed or advanced on
+            // another screen is reflected in the counts.
+            LaunchedEffect(Unit) { dashboardViewModel.load() }
+            val dashboardUiState by dashboardViewModel.uiState.collectAsState()
+
+            var branchName by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(staffContext.branchId) {
+                branchName = staffContext.branchId
+                    ?.let { RepositoryProvider.branches.getBranch(it).getOrNull()?.name }
+            }
+
+            StaffDashboardScreen(
+                staffContext = staffContext,
+                uiState = dashboardUiState,
+                branchName = branchName,
+                onRetry = dashboardViewModel::load,
+                onOpenQueue = { tab -> navController.navigate(StaffRoutes.queue(tab.name)) },
+                onOpenInventory = { navController.navigate(StaffRoutes.INVENTORY) },
+                onSignOut = {
+                    AuthRepositoryProvider.instance.signOut()
+                    sessionViewModel.signOut()
+                    navController.navigate(Graph.AUTH) {
+                        popUpTo(Graph.STAFF) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(
+            route = StaffRoutes.QUEUE,
+            arguments = listOf(
+                navArgument(StaffRoutes.TAB_ARG) {
+                    type = NavType.StringType
+                    defaultValue = StaffQueueTab.NEW.name
+                },
+            ),
+        ) { backStackEntry ->
+            val staffContext = StaffContext.from(user)
+            val requestedTab = backStackEntry.arguments?.getString(StaffRoutes.TAB_ARG)
+            val initialTab = runCatching { StaffQueueTab.valueOf(requestedTab.orEmpty()) }
+                .getOrDefault(StaffQueueTab.NEW)
+                // A Technician has no New tab, so a link to it lands on Active.
+                .let { if (!staffContext.canAssign) StaffQueueTab.ACTIVE else it }
+
+            val queueViewModel: StaffAppointmentsViewModel = viewModel(
+                factory = StaffAppointmentsViewModel.factory(
+                    staffContext = staffContext,
+                    repairRequestRepository = RepositoryProvider.repairRequests,
+                    serviceRepository = RepositoryProvider.services,
+                    branchRepository = RepositoryProvider.branches,
+                    technicianRepository = RepositoryProvider.technicians,
+                    initialTab = initialTab,
+                ),
+            )
+            LaunchedEffect(Unit) { queueViewModel.load() }
+            val queueUiState by queueViewModel.uiState.collectAsState()
+
+            StaffAppointmentsScreen(
+                staffContext = staffContext,
+                uiState = queueUiState,
+                onTabSelected = queueViewModel::onTabSelected,
+                onQueryChanged = queueViewModel::onQueryChanged,
+                onRetry = queueViewModel::load,
+                onRequestClick = { request ->
+                    navController.navigate(StaffRoutes.appointment(request.id))
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = StaffRoutes.APPOINTMENT,
+            arguments = listOf(navArgument(StaffRoutes.REQUEST_ID_ARG) { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val staffContext = StaffContext.from(user)
+            val requestId = backStackEntry.arguments?.getString(StaffRoutes.REQUEST_ID_ARG).orEmpty()
+            // Same use case the customer's booking ran in Block 5, composed
+            // here from the repository interfaces rather than duplicated.
+            val matchBranches = remember {
+                MatchBranchesUseCase(
+                    branchRepository = RepositoryProvider.branches,
+                    technicianRepository = RepositoryProvider.technicians,
+                    sparePartRepository = RepositoryProvider.spareParts,
+                )
+            }
+            val detailViewModel: StaffAppointmentDetailViewModel = viewModel(
+                factory = StaffAppointmentDetailViewModel.factory(
+                    requestId = requestId,
+                    staffContext = staffContext,
+                    repairRequestRepository = RepositoryProvider.repairRequests,
+                    serviceRepository = RepositoryProvider.services,
+                    matchBranches = matchBranches,
+                    technicianRepository = RepositoryProvider.technicians,
+                ),
+            )
+            val detailUiState by detailViewModel.uiState.collectAsState()
+
+            StaffAppointmentDetailScreen(
+                staffContext = staffContext,
+                uiState = detailUiState,
+                onRetry = detailViewModel::load,
+                onBranchSelected = detailViewModel::onBranchSelected,
+                onTechnicianSelected = detailViewModel::onTechnicianSelected,
+                onConfirmAssignment = { detailViewModel.confirmAssignment() },
+                onAdvanceStatus = detailViewModel::advanceStatus,
+                onMessageShown = detailViewModel::dismissMessages,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(StaffRoutes.INVENTORY) {
+            val staffContext = StaffContext.from(user)
+            if (staffContext.canManageInventory) {
+                val inventoryViewModel: AdminInventoryViewModel = viewModel(
+                    factory = AdminInventoryViewModel.factory(
+                        staffContext = staffContext,
+                        repository = RepositoryProvider.adminInventory,
+                    ),
+                )
+                val inventoryUiState by inventoryViewModel.uiState.collectAsState()
+                AdminInventoryScreen(
+                    uiState = inventoryUiState,
+                    onQueryChange = inventoryViewModel::onQueryChange,
+                    onBranchSelected = inventoryViewModel::onBranchSelected,
+                    onCategorySelected = inventoryViewModel::onCategorySelected,
+                    onStockFilterSelected = inventoryViewModel::onStockFilterSelected,
+                    onSortSelected = inventoryViewModel::onSortSelected,
+                    onOpenDetails = inventoryViewModel::openDetails,
+                    onCloseDetails = inventoryViewModel::closeDetails,
+                    onOpenCreate = inventoryViewModel::openCreateItem,
+                    onOpenEdit = inventoryViewModel::openEditItem,
+                    onUpdateItemForm = inventoryViewModel::updateItemForm,
+                    onCloseItemForm = inventoryViewModel::closeItemForm,
+                    onSaveItem = inventoryViewModel::saveItem,
+                    onOpenAdjustment = inventoryViewModel::openAdjustment,
+                    onUpdateAdjustmentForm = inventoryViewModel::updateAdjustmentForm,
+                    onCloseAdjustment = inventoryViewModel::closeAdjustment,
+                    onSaveAdjustment = inventoryViewModel::saveAdjustment,
+                    onRequestArchive = inventoryViewModel::requestArchive,
+                    onDismissArchive = inventoryViewModel::dismissArchive,
+                    onConfirmArchive = inventoryViewModel::confirmArchive,
+                    onRestore = inventoryViewModel::restoreItem,
+                    onRetry = inventoryViewModel::load,
+                    onMessageShown = inventoryViewModel::dismissMessages,
+                    onBack = { navController.popBackStack() },
+                )
+            } else {
+                val inventoryViewModel: StaffInventoryViewModel = viewModel(
+                    factory = StaffInventoryViewModel.factory(
+                        staffContext = staffContext,
+                        branchRepository = RepositoryProvider.branches,
+                        technicianRepository = RepositoryProvider.technicians,
+                        sparePartRepository = RepositoryProvider.spareParts,
+                        repairRequestRepository = RepositoryProvider.repairRequests,
+                        userRepository = RepositoryProvider.users,
+                        initialTab = StaffInventoryTab.PARTS,
+                    ),
+                )
+                val inventoryUiState by inventoryViewModel.uiState.collectAsState()
+
+                StaffInventoryScreen(
+                    staffContext = staffContext,
+                    uiState = inventoryUiState,
+                    onTabSelected = inventoryViewModel::onTabSelected,
+                    onBranchSelected = inventoryViewModel::onBranchSelected,
+                    onStockChange = inventoryViewModel::updateStock,
+                    onOpenCreateTechnician = inventoryViewModel::openCreateTechnician,
+                    onOpenEditTechnician = inventoryViewModel::openEditTechnician,
+                    onRequestArchiveTechnician = inventoryViewModel::requestArchiveTechnician,
+                    onDismissTechnicianForm = inventoryViewModel::dismissTechnicianForm,
+                    onTechnicianNameChange = inventoryViewModel::onTechnicianNameChange,
+                    onTechnicianBranchChange = inventoryViewModel::onTechnicianBranchChange,
+                    onTechnicianSkillToggle = inventoryViewModel::onTechnicianSkillToggle,
+                    onTechnicianAvailableChange = inventoryViewModel::onTechnicianAvailableChange,
+                    onSaveTechnician = inventoryViewModel::saveTechnician,
+                    onDismissArchiveTechnician = inventoryViewModel::dismissArchiveTechnician,
+                    onConfirmArchiveTechnician = inventoryViewModel::confirmArchiveTechnician,
+                    onRetry = inventoryViewModel::load,
+                    onMessageShown = inventoryViewModel::dismissMessages,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+
+        composable(StaffRoutes.TECHNICIANS) {
+            val staffContext = StaffContext.from(user)
+            val inventoryViewModel: StaffInventoryViewModel = viewModel(
+                factory = StaffInventoryViewModel.factory(
+                    staffContext = staffContext,
+                    branchRepository = RepositoryProvider.branches,
+                    technicianRepository = RepositoryProvider.technicians,
+                    sparePartRepository = RepositoryProvider.spareParts,
+                    repairRequestRepository = RepositoryProvider.repairRequests,
+                    userRepository = RepositoryProvider.users,
+                    initialTab = StaffInventoryTab.TECHNICIANS,
+                ),
+            )
+            val inventoryUiState by inventoryViewModel.uiState.collectAsState()
+            StaffInventoryScreen(
+                staffContext, inventoryUiState, inventoryViewModel::onTabSelected,
+                inventoryViewModel::onBranchSelected, inventoryViewModel::updateStock,
+                inventoryViewModel::openCreateTechnician, inventoryViewModel::openEditTechnician,
+                inventoryViewModel::requestArchiveTechnician, inventoryViewModel::dismissTechnicianForm,
+                inventoryViewModel::onTechnicianNameChange, inventoryViewModel::onTechnicianBranchChange,
+                inventoryViewModel::onTechnicianSkillToggle, inventoryViewModel::onTechnicianAvailableChange,
+                inventoryViewModel::saveTechnician, inventoryViewModel::dismissArchiveTechnician,
+                inventoryViewModel::confirmArchiveTechnician, inventoryViewModel::load,
+                inventoryViewModel::dismissMessages, { navController.popBackStack() },
+            )
+        }
+
+        composable(StaffRoutes.MORE) {
+            val staffContext = StaffContext.from(user)
+            StaffMoreScreen(
+                staffContext = staffContext,
+                onBranches = { navController.navigate(StaffRoutes.BRANCHES) },
+                onUsers = { navController.navigate(StaffRoutes.USERS) },
+                onReports = { navController.navigate(StaffRoutes.REPORTS) },
+                onSignOut = {
+                    AuthRepositoryProvider.instance.signOut()
+                    sessionViewModel.signOut()
+                    navController.navigate(Graph.AUTH) { popUpTo(Graph.STAFF) { inclusive = true } }
+                },
+            )
+        }
+
+        listOf(StaffRoutes.BRANCHES, StaffRoutes.USERS, StaffRoutes.REPORTS).forEach { route ->
+            composable(route) {
+                val staffContext = StaffContext.from(user)
+                val operationsViewModel: StaffOperationsViewModel = viewModel(
+                    factory = StaffOperationsViewModel.factory(
+                        staffContext, RepositoryProvider.repairRequests, RepositoryProvider.payments,
+                        RepositoryProvider.branches, RepositoryProvider.technicians,
+                        RepositoryProvider.spareParts, RepositoryProvider.users,
+                    ),
+                )
+                val state by operationsViewModel.uiState.collectAsState()
+                when (route) {
+                    StaffRoutes.BRANCHES -> StaffBranchesScreen(staffContext, state, operationsViewModel::load) { navController.popBackStack() }
+                    StaffRoutes.USERS -> StaffUsersScreen(staffContext, state, operationsViewModel::load) { navController.popBackStack() }
+                    else -> StaffReportsScreen(staffContext, state, operationsViewModel::load) { navController.popBackStack() }
+                }
+            }
+        }
+    }
+}
