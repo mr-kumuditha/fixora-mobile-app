@@ -5,6 +5,7 @@ object FirestoreCollections {
     const val USERS = "users"
     const val SERVICES = "services"
     const val BRANCHES = "branches"
+    const val TECHNICIANS = "technicians"
     const val REPAIR_REQUESTS = "repairRequests"
     const val PAYMENTS = "payments"
 }
