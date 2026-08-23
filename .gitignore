@@ -23,6 +23,10 @@ firestore-debug.log
 supabase/.temp/
 .claude/
 
+# Local AI instructions and development progress notes
+CLAUDE.md
+PROGRESS.md
+
 # JavaScript dependencies
 node_modules/
 
