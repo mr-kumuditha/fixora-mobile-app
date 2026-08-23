@@ -7,24 +7,18 @@ import com.techfix.app.core.data.catalog.FirestoreServiceRepository
 import com.techfix.app.core.data.draft.RoomDraftRepairRequestRepository
 import com.techfix.app.core.data.local.FixoraDatabase
 import com.techfix.app.core.data.location.FusedLocationRepository
-import com.techfix.app.core.data.inventory.SupabaseAdminInventoryRepository
 import com.techfix.app.core.data.payment.FirestorePaymentRepository
 import com.techfix.app.core.data.repair.FirestoreRepairRequestRepository
 import com.techfix.app.core.data.sparepart.SupabaseSparePartRepository
 import com.techfix.app.core.data.storage.SupabaseImageUploadRepository
-import com.techfix.app.core.data.technician.FirestoreTechnicianRepository
-import com.techfix.app.core.data.user.FirestoreUserRepository
 import com.techfix.app.domain.branch.BranchRepository
 import com.techfix.app.domain.catalog.ServiceRepository
 import com.techfix.app.domain.draft.DraftRepairRequestRepository
 import com.techfix.app.domain.location.LocationRepository
-import com.techfix.app.domain.inventory.AdminInventoryRepository
 import com.techfix.app.domain.payment.PaymentRepository
 import com.techfix.app.domain.repair.RepairRequestRepository
 import com.techfix.app.domain.sparepart.SparePartRepository
 import com.techfix.app.domain.storage.ImageUploadRepository
-import com.techfix.app.domain.technician.TechnicianRepository
-import com.techfix.app.domain.user.UserRepository
 
 /**
  * Single place the data-layer implementations are chosen, in the same
@@ -73,10 +67,7 @@ object RepositoryProvider {
     val branches: BranchRepository by lazy { FirestoreBranchRepository() }
     val repairRequests: RepairRequestRepository by lazy { FirestoreRepairRequestRepository() }
     val payments: PaymentRepository by lazy { FirestorePaymentRepository() }
-    val technicians: TechnicianRepository by lazy { FirestoreTechnicianRepository() }
-    val users: UserRepository by lazy { FirestoreUserRepository() }
     val spareParts: SparePartRepository by lazy { SupabaseSparePartRepository() }
-    val adminInventory: AdminInventoryRepository by lazy { SupabaseAdminInventoryRepository() }
     val imageUpload: ImageUploadRepository by lazy { SupabaseImageUploadRepository() }
 
     /**
