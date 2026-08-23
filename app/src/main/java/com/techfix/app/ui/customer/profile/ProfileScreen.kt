@@ -414,4 +414,7 @@ private fun ProfileErrorState(
 internal val UserRole?.accountLabel: String
     get() = when (this) {
         UserRole.CUSTOMER, null -> "Fixora Customer"
+        UserRole.TECHNICIAN -> "Fixora Technician"
+        UserRole.BRANCH_MANAGER -> "Fixora Branch Manager"
+        UserRole.ADMIN -> "Fixora Administrator"
     }
