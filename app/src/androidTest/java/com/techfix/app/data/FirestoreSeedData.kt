@@ -12,8 +12,7 @@ import kotlinx.coroutines.tasks.await
  * Fixed document ids, written with set(), so re-running the seed updates the
  * same rows instead of piling up duplicates. Prices are LKR.
  *
- * Technicians were migrated once into Firestore with stable UUIDs. Spare
- * parts and stock remain seeded by docs/supabase/schema.sql.
+ * Spare parts and stock remain seeded by docs/supabase/schema.sql.
  */
 object FirestoreSeedData {
 

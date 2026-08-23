@@ -3,7 +3,6 @@ package com.techfix.app.core.navigation
 object Graph {
     const val AUTH = "auth_graph"
     const val CUSTOMER = "customer_graph"
-    const val STAFF = "staff_graph"
 }
 
 object AuthRoutes {
@@ -59,29 +58,4 @@ object CustomerRoutes {
     fun tracking(requestId: String) = "customer/tracking/$requestId"
     fun historyDetail(requestId: String) = "customer/history/$requestId"
     fun payment(requestId: String) = "customer/payment/$requestId"
-}
-
-/**
- * One screen set for Admin, Branch Manager, and Technician — what each role
- * can see or do on these screens is a permission flag
- * ([com.techfix.app.ui.staff.StaffContext]), not a separate set of routes.
- */
-object StaffRoutes {
-    const val DASHBOARD = "staff/dashboard"
-
-    const val TAB_ARG = "tab"
-    const val QUEUE = "staff/queue?$TAB_ARG={$TAB_ARG}"
-
-    const val REQUEST_ID_ARG = "requestId"
-    const val APPOINTMENT = "staff/appointment/{$REQUEST_ID_ARG}"
-
-    const val INVENTORY = "staff/inventory"
-    const val TECHNICIANS = "staff/technicians"
-    const val MORE = "staff/more"
-    const val BRANCHES = "staff/branches"
-    const val USERS = "staff/users"
-    const val REPORTS = "staff/reports"
-
-    fun queue(tab: String) = "staff/queue?$TAB_ARG=$tab"
-    fun appointment(requestId: String) = "staff/appointment/$requestId"
 }

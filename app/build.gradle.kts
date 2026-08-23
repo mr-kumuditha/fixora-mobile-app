@@ -29,12 +29,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Block 3 seeding signs in as an existing ADMIN account so it passes the
-        // Firestore rules. Passed to `am instrument` at run time from
-        // local.properties, so the password is never compiled into any APK.
-        testInstrumentationRunnerArguments["seedAdminEmail"] = secret("SEED_ADMIN_EMAIL")
-        testInstrumentationRunnerArguments["seedAdminPassword"] = secret("SEED_ADMIN_PASSWORD")
-
         buildConfigField("String", "SUPABASE_URL", "\"${secret("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${secret("SUPABASE_ANON_KEY")}\"")
 
@@ -97,7 +91,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
 
-    // Firebase — Auth (email + Google) and Firestore, including technicians.
+    // Firebase — Auth (email + Google) and Firestore.
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
@@ -113,7 +107,6 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     // Supabase — spare parts, spare-part stock, and repair-image Storage.
-    // The original technician rows remain untouched as a migration archive.
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.storage)
     implementation(libs.ktor.client.android)

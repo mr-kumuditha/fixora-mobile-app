@@ -9,7 +9,6 @@ import com.techfix.app.domain.sparepart.SparePartRepository
 import com.techfix.app.domain.sparepart.SparePartStock
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
-import java.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -36,19 +35,6 @@ class SupabaseSparePartRepository(
             compatibleCategories = compatibleCategories.mapNotNull(DeviceCategory::fromRaw),
         )
     }
-
-    /**
-     * Write shape for [updateStock]. Separate from [StockRow] because the
-     * upsert must not send `id` (the row may not exist yet, and Postgres
-     * generates it) and must send `updated_at` (nothing else refreshes it).
-     */
-    @Serializable
-    private data class StockUpsert(
-        @SerialName("part_id") val partId: String,
-        @SerialName("branch_id") val branchId: String,
-        val quantity: Int,
-        @SerialName("updated_at") val updatedAt: String,
-    )
 
     @Serializable
     private data class StockRow(
@@ -104,28 +90,5 @@ class SupabaseSparePartRepository(
                 quantity = quantityByPartId[part.id] ?: 0,
             )
         }
-    }
-
-    override suspend fun updateStock(
-        partId: String,
-        branchId: String,
-        quantity: Int,
-    ): Result<Unit> = runCatching {
-        require(quantity >= 0) { "Stock quantity can't be negative" }
-        client.from(SupabaseTables.SPARE_PART_STOCK)
-            .upsert(
-                StockUpsert(
-                    partId = partId,
-                    branchId = branchId,
-                    quantity = quantity,
-                    updatedAt = Instant.now().toString(),
-                )
-            ) {
-                // Matches the spare_part_stock_unique_part_branch constraint,
-                // so a branch that has never carried this part gets a new row
-                // and one that has gets its quantity corrected.
-                onConflict = "part_id,branch_id"
-            }
-        Unit
     }
 }

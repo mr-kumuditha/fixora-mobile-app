@@ -18,12 +18,4 @@ interface SparePartRepository {
         branchId: String,
         category: DeviceCategory,
     ): Result<List<SparePartAvailability>>
-
-    /**
-     * Staff-side stock correction (Block 7). Upserts on (part, branch) rather
-     * than updating, because a part that has never been stocked at a branch
-     * has no `spare_part_stock` row at all — the read path reports that as
-     * quantity 0, so the write path has to be able to create it.
-     */
-    suspend fun updateStock(partId: String, branchId: String, quantity: Int): Result<Unit>
 }
