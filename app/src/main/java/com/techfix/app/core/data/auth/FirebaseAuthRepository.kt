@@ -16,6 +16,7 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
+import com.techfix.app.core.data.FirestoreCollections
 import com.techfix.app.R
 import com.techfix.app.core.navigation.UserRole
 import com.techfix.app.domain.auth.AuthRepository
@@ -26,7 +27,8 @@ import kotlinx.coroutines.tasks.await
 /**
  * Firebase Auth for sign-in, Firestore for the `users/{uid}` role record.
  * On first sign-in by either method the user doc is created with role
- * CUSTOMER if it doesn't already exist.
+ * CUSTOMER if it doesn't already exist; staff roles are assigned later by
+ * an Admin editing that doc directly (no self-service staff signup).
  */
 class FirebaseAuthRepository(
     private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
@@ -129,23 +131,53 @@ class FirebaseAuthRepository(
             )
         }
 
-        val storedRole = snapshot.getString(ROLE_FIELD) ?: UserRole.CUSTOMER.name
-        if (storedRole != UserRole.CUSTOMER.name) {
-            auth.signOut()
-            error("This repository version supports customer accounts only.")
+        val roleName = snapshot.getString(ROLE_FIELD) ?: UserRole.CUSTOMER.name
+        val role = runCatching { UserRole.valueOf(roleName) }.getOrDefault(UserRole.CUSTOMER)
+        val branchId = snapshot.getString(BRANCH_ID_FIELD)?.takeIf { it.isNotBlank() }
+        val technicianId = snapshot.getString(TECHNICIAN_ID_FIELD)?.takeIf { it.isNotBlank() }
+
+        if (role == UserRole.TECHNICIAN) {
+            try {
+                val stableTechnicianId = technicianId
+                    ?: error("This technician account is missing its roster link.")
+                val stableBranchId = branchId
+                    ?: error("This technician account is missing its branch assignment.")
+                val technician = firestore.collection(FirestoreCollections.TECHNICIANS)
+                    .document(stableTechnicianId)
+                    .get(Source.SERVER)
+                    .await()
+                check(technician.exists()) { "The linked technician record does not exist." }
+                check(technician.getBoolean(TECHNICIAN_ACTIVE_FIELD) == true) {
+                    "This technician account has been retired."
+                }
+                check(technician.getString(TECHNICIAN_LINKED_USER_FIELD) == uid) {
+                    "The technician account link does not match this login."
+                }
+                check(technician.getString(BRANCH_ID_FIELD) == stableBranchId) {
+                    "The technician account branch does not match the roster."
+                }
+            } catch (error: Throwable) {
+                auth.signOut()
+                throw error
+            }
         }
 
+        // Staff scoping (Block 7). Both are optional and only meaningful on a
+        // staff record; a customer doc never carries them, and a staff doc
+        // that omits them just gets the wider, unscoped view.
         val customPhotoUrl = snapshot.getString(PHOTO_URL_FIELD)?.takeIf { it.isNotBlank() }
         return AuthUser(
             uid = uid,
             email = firebaseUser.email,
-            role = UserRole.CUSTOMER,
+            role = role,
             name = snapshot.getString(NAME_FIELD)?.takeIf { it.isNotBlank() }
                 ?: firebaseUser.displayName?.takeIf { it.isNotBlank() },
             phone = snapshot.getString(PHONE_FIELD)?.takeIf { it.isNotBlank() },
             photoUrl = customPhotoUrl ?: firebaseUser.photoUrl?.toString(),
             hasCustomPhoto = customPhotoUrl != null,
             emailVerified = firebaseUser.isEmailVerified,
+            branchId = branchId,
+            technicianId = technicianId,
         )
     }
 
@@ -186,5 +218,9 @@ class FirebaseAuthRepository(
         const val PHONE_FIELD = "phone"
         const val PHOTO_URL_FIELD = "photoUrl"
         const val UPDATED_AT_FIELD = "updatedAt"
+        const val BRANCH_ID_FIELD = "branchId"
+        const val TECHNICIAN_ID_FIELD = "technicianId"
+        const val TECHNICIAN_ACTIVE_FIELD = "active"
+        const val TECHNICIAN_LINKED_USER_FIELD = "linkedUserId"
     }
 }
