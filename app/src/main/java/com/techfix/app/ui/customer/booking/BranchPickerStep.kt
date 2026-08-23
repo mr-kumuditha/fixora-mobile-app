@@ -140,7 +140,8 @@ private fun BranchMatchContent(
         }
         item {
             Text(
-                "Ranked on how far each branch is and whether compatible parts are on the shelf.",
+                "Ranked on how far each branch is plus whether it has a free technician " +
+                    "for your device and the parts on the shelf.",
                 style = MaterialTheme.typography.bodySmall,
                 color = FixoraTheme.extendedColors.textSecondary,
             )
@@ -318,7 +319,7 @@ private fun LocationStatusBanner(uiState: BookRepairUiState, onRetryMatching: ()
 
         LocationStatus.PERMISSION_DENIED -> Triple(
             Icons.Rounded.LocationOff,
-            "Location is off, so branches are ranked on parts availability only. " +
+            "Location is off, so branches are ranked on technician and parts availability only. " +
                 "Turn location on to include distance.",
             extended.warning,
         )
@@ -378,7 +379,7 @@ private fun BlockedBranchesBanner() {
         )
         Text(
             "No branch can start this repair straight away. The branch at the top is the " +
-                "closest match — expect a short wait for parts.",
+                "closest match — expect a short wait for a technician or parts.",
             style = MaterialTheme.typography.labelMedium,
             color = extended.textSecondary,
         )
@@ -468,6 +469,15 @@ private fun BranchMatchCard(
                 )
             }
 
+            AvailabilityRow(
+                icon = Icons.Rounded.Engineering,
+                available = match.hasTechnician,
+                availableText = when (match.availableTechnicians.size) {
+                    1 -> "1 technician free for this device type"
+                    else -> "${match.availableTechnicians.size} technicians free for this device type"
+                },
+                unavailableText = "No free technician for this device type",
+            )
             AvailabilityRow(
                 icon = Icons.Rounded.Inventory2,
                 available = match.hasParts,
@@ -627,7 +637,7 @@ private fun BranchMatchSkeleton(uiState: BookRepairUiState) {
         Text(
             when (uiState.locationStatus) {
                 LocationStatus.RESOLVING -> "Finding your location…"
-                else -> "Checking parts at each branch…"
+                else -> "Checking technicians and parts at each branch…"
             },
             style = MaterialTheme.typography.bodySmall,
             color = FixoraTheme.extendedColors.textSecondary,

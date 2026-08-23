@@ -5,6 +5,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
 import com.techfix.app.core.data.FirestoreCollections
 import com.techfix.app.domain.catalog.DeviceCategory
 import com.techfix.app.domain.repair.DeviceDetails
@@ -45,6 +46,40 @@ class FirestoreRepairRequestRepository(
     ): Result<List<RepairRequest>> = runCatching {
         collection
             .whereEqualTo(FIELD_CUSTOMER_ID, customerId)
+            .orderBy(FIELD_CREATED_AT, Query.Direction.DESCENDING)
+            .get()
+            .await()
+            .documents
+            .mapNotNull { it.toRepairRequest() }
+    }
+
+    override suspend fun getRepairRequestsForBranch(
+        branchId: String,
+    ): Result<List<RepairRequest>> = runCatching {
+        collection
+            .whereEqualTo(FIELD_BRANCH_ID, branchId)
+            .orderBy(FIELD_CREATED_AT, Query.Direction.DESCENDING)
+            .get()
+            .await()
+            .documents
+            .mapNotNull { it.toRepairRequest() }
+    }
+
+    override suspend fun getRepairRequestsForTechnician(
+        technicianId: String,
+    ): Result<List<RepairRequest>> = runCatching {
+        require(technicianId.isNotBlank()) { "Technician assignment is missing" }
+        collection
+            .whereEqualTo(FIELD_TECHNICIAN_ID, technicianId)
+            .orderBy(FIELD_CREATED_AT, Query.Direction.DESCENDING)
+            .get(Source.SERVER)
+            .await()
+            .documents
+            .mapNotNull { it.toRepairRequest() }
+    }
+
+    override suspend fun getAllRepairRequests(): Result<List<RepairRequest>> = runCatching {
+        collection
             .orderBy(FIELD_CREATED_AT, Query.Direction.DESCENDING)
             .get()
             .await()
@@ -98,6 +133,53 @@ class FirestoreRepairRequestRepository(
             }
             collection.document(requestId).update(fields).await()
             Unit
+        }
+
+    /**
+     * Runs in a transaction because the status to write depends on the status
+     * already stored: assigning confirms a new booking, but reassigning a
+     * repair that is under way must leave its status alone. Reading it
+     * separately and then writing would let a concurrent status advance be
+     * overwritten between the two calls.
+     */
+    override suspend fun assignTechnician(
+        requestId: String,
+        branchId: String,
+        technicianId: String,
+    ): Result<RepairStatus> =
+        runCatching {
+            val document = collection.document(requestId)
+            val resolvedStatus = firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(document)
+                if (!snapshot.exists()) error("Repair request $requestId not found")
+
+                val current = RepairStatus.fromRaw(snapshot.getString(FIELD_STATUS))
+                val resolved = current.afterAssignment
+
+                val updates = mutableMapOf<String, Any>(
+                    FIELD_BRANCH_ID to branchId,
+                    FIELD_TECHNICIAN_ID to technicianId,
+                )
+                // Only written when it actually changes, so a reassignment
+                // mid-repair leaves the status field untouched entirely.
+                if (resolved != current) {
+                    updates[FIELD_STATUS] = resolved.name
+                }
+                transaction.update(document, updates)
+                resolved
+            }.await()
+            val persisted = document.get(Source.SERVER).await()
+            check(persisted.exists()) { "Assigned repair request disappeared from Firestore" }
+            check(persisted.getString(FIELD_BRANCH_ID) == branchId) {
+                "Firestore did not persist the selected branch"
+            }
+            check(persisted.getString(FIELD_TECHNICIAN_ID) == technicianId) {
+                "Firestore did not persist the selected technician"
+            }
+            check(RepairStatus.fromRaw(persisted.getString(FIELD_STATUS)) == resolvedStatus) {
+                "Firestore returned an unexpected repair status after assignment"
+            }
+            resolvedStatus
         }
 
     private fun RepairRequest.toFirestoreMap(): Map<String, Any?> = mapOf(

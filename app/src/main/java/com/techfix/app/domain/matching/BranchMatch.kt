@@ -2,6 +2,7 @@ package com.techfix.app.domain.matching
 
 import com.techfix.app.domain.branch.Branch
 import com.techfix.app.domain.sparepart.SparePartAvailability
+import com.techfix.app.domain.technician.Technician
 
 /**
  * One branch scored against a repair request. Carries the inputs that
@@ -12,15 +13,20 @@ data class BranchMatch(
     val branch: Branch,
     /** Null when the customer's location is unknown — not zero. */
     val distanceKm: Double?,
+    val availableTechnicians: List<Technician>,
     val partsInStock: List<SparePartAvailability>,
     val partsOutOfStock: List<SparePartAvailability>,
+    val technicianScore: Double,
     val partsScore: Double,
     val distanceScore: Double,
     val score: Double,
 ) {
+    val hasTechnician: Boolean get() = availableTechnicians.isNotEmpty()
+
     val hasParts: Boolean get() = partsInStock.isNotEmpty()
 
-    val canHandleNow: Boolean get() = hasParts
+    /** Both halves of the requirement met — the branch can start work now. */
+    val canHandleNow: Boolean get() = hasTechnician && hasParts
 
     val totalPartsTracked: Int get() = partsInStock.size + partsOutOfStock.size
 }
